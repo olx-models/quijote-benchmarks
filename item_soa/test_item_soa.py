@@ -39,22 +39,22 @@ class ItemSoa(FunkLoadTestCase):
         response = self.get(url_item, description="Item")
         data = json.loads(response.body)
         for name, url in data['response']['resources'].items():
-            self._get_subresource(name, url, "Subresource %s" % name)
+            self._get_subresource(name, url)
 
-    def _get_subresource(self, name, url, description):
+    def _get_subresource(self, name, url):
+        description = "Subresource %s" % name
         response = self.get(url, description=description, ok_codes=OK_CODES)
-        if response.code == 200 and name in ('category', 'location', 'parent', 'seo'):
+        if response.code == 200 and name in ('category', 'location', 'seo'):
             data = json.loads(response.body)
-            if name in ('category', 'location', 'parent'):
+            if name in ('category', 'location'):
                 url_parent = data['response']['resources']['parent']
                 if url_parent:
-                    description = "Subresource %s parent" % name
-                    self._get_subresource('parent', url_parent, description)
+                    self._get_subresource(name, url_parent)
             if name == 'seo':
                 for direction in ('next', 'prev'):
                     url_seo = data['response']['resources'][direction]
                     if url_seo:
-                        description = "Subresource %s %s" % (name, direction)
+                        description = "Subresource seo %s" % direction
                         self.get(url_seo, description=description,
                                  ok_codes=OK_CODES)
 
