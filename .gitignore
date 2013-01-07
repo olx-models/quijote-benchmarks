@@ -40,3 +40,4 @@ env
 
 # Benchmark results
 tmp
+test_get-*

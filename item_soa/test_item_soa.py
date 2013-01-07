@@ -6,6 +6,9 @@ from itertools import cycle
 import ids
 
 
+OK_CODES = (200, 404)
+
+
 class ThreadSafeIter:
 
     def __init__(self, iterator):
@@ -39,13 +42,21 @@ class ItemSoa(FunkLoadTestCase):
             self._get_subresource(name, url, "Subresource %s" % name)
 
     def _get_subresource(self, name, url, description):
-        response = self.get(url, description=description, ok_codes=[200, 404])
-        if response.code == 200 and name in ('category', 'location', 'parent'):
+        response = self.get(url, description=description, ok_codes=OK_CODES)
+        if response.code == 200 and name in ('category', 'location', 'parent', 'seo'):
             data = json.loads(response.body)
-            url_parent = data['response']['resources']['parent']
-            if url_parent:
-                description = "Subresource %s parent" % name
-                self._get_subresource('parent', url_parent, description)
+            if name in ('category', 'location', 'parent'):
+                url_parent = data['response']['resources']['parent']
+                if url_parent:
+                    description = "Subresource %s parent" % name
+                    self._get_subresource('parent', url_parent, description)
+            if name == 'seo':
+                for direction in ('next', 'prev'):
+                    url_seo = data['response']['resources'][direction]
+                    if url_seo:
+                        description = "Subresource %s %s" % (name, direction)
+                        self.get(url_seo, description=description,
+                                 ok_codes=OK_CODES)
 
 
 if __name__ == '__main__':

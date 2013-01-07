@@ -6,6 +6,10 @@ DBS = {'db-dev': {'host':   'db-dev.olx.com.ar',
                   'user':   'dev_core',
                   'passwd': '*********',
                   'db':     'DBOLX_DEV'},
+       'qa1':    {'host':   'db1-qa1.olx.com.ar',
+                  'user':   'dev',
+                  'passwd': '*********',
+                  'db':     'DBOLX_QA'},
        'prod':   {'host':   'replica-olx-main.olx.com.ar',
                   'user':   'dev',
                   'passwd': '*********',
@@ -14,7 +18,7 @@ DBS = {'db-dev': {'host':   'db-dev.olx.com.ar',
 
 
 def get_ids(limit):
-    conn = MySQLdb.connect(**DBS['db-dev'])
+    conn = MySQLdb.connect(**DBS['qa1'])
     cur = conn.cursor()
     cur.execute("""SELECT id FROM olx_items WHERE data_domain_id=1
                    ORDER BY id DESC LIMIT 1000,6000""")
