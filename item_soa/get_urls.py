@@ -1,11 +1,30 @@
+import sys
 import time
 import requests
-import ids
 
 
-#URL_BASE = 'http://dev-models.olx.com.ar:8000/quijote'
-#URL_BASE = 'http://models-quijote-qa1.olx.com.ar'
-URL_BASE = 'http://models-quijote-qa2.olx.com.ar'
+ENVS = {
+    'dev': {
+        'ids_module': 'ids_dev',
+        'log_file': 'result_dev.txt',
+        'url_base': 'http://dev-models.olx.com.ar:8000/quijote',
+    },
+    'qa1': {
+        'ids_module': 'ids_qa1',
+        'log_file': 'result_qa1.txt',
+        'url_base': 'http://models-quijote-qa1.olx.com.ar',
+    },
+    'qa2': {
+        'ids_module': 'ids_qa2',
+        'log_file': 'result_qa2.txt',
+        'url_base': 'http://models-quijote-qa2.olx.com.ar',
+    },
+    'live': {
+        'ids_module': 'ids_live',
+        'log_file': 'result_live.txt',
+        'url_base': 'http://204.232.252.178',
+    },
+}
 
 
 class Counter(object):
@@ -60,13 +79,17 @@ def fetch_subresource(name, url, counter):
 
 
 if __name__ == '__main__':
-    logfile = open('urls_qa2.txt', 'w')
+    env = sys.argv[1]
+    limit = int(sys.argv[2])
+
+    ids = __import__(ENVS[env]['ids_module'])
+    logfile = open(ENVS[env]['log_file'], 'w')
 
     item_counter = Counter('Item Pages')
     reqs_counter = Counter('Requests')
 
-    for i, id in enumerate(ids.ids[:5000]):
-        url = URL_BASE + '/v1/site/1/item/' + str(id)
+    for i, id in enumerate(ids.ids[:limit]):
+        url = ENVS[env]['url_base'] + '/v1/site/1/item/' + str(id)
 
         begin_time = time.time()
         response = fetch(url, reqs_counter)
