@@ -37,9 +37,11 @@ class ItemSoa(FunkLoadTestCase):
     def test_get(self):
         url_item = self._get_url_item()
         response = self.get(url_item, description="Item")
-        data = json.loads(response.body)
-        for name, url in data['response']['resources'].items():
-            self._get_subresource(name, url)
+        if response.code == 200:
+            data = json.loads(response.body)
+            for name, url in data['response']['resources'].items():
+                if url:
+                    self._get_subresource(name, url)
 
     def _get_subresource(self, name, url):
         description = "Subresource %s" % name

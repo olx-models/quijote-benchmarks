@@ -1,8 +1,9 @@
+import sys
 import MySQLdb
 import random
 
 
-DBS = {'db-dev': {'host':   'db-dev.olx.com.ar',
+DBS = {'dev':    {'host':   'db-dev.olx.com.ar',
                   'user':   'dev_core',
                   'passwd': '*********',
                   'db':     'DBOLX_DEV'},
@@ -17,11 +18,11 @@ DBS = {'db-dev': {'host':   'db-dev.olx.com.ar',
       }
 
 
-def get_ids(limit):
-    conn = MySQLdb.connect(**DBS['qa1'])
+def get_ids(filename, host, limit):
+    conn = MySQLdb.connect(**DBS[host])
     cur = conn.cursor()
     cur.execute("""SELECT id FROM olx_items WHERE data_domain_id=1
-                   ORDER BY id DESC LIMIT 1000,6000""")
+                   ORDER BY id DESC LIMIT 5000,%s""" % limit)
 
     ids = []
     while True:
@@ -33,9 +34,12 @@ def get_ids(limit):
     conn.close()
     
     random.shuffle(ids)
-    with open('ids.py', 'w') as f:
+    with open(filename, 'w') as f:
         f.write('ids=(%s\n)' % "".join(['\n    %s,' % id for id in ids]))
 
 
 if __name__ == '__main__':
-    get_ids(10000)
+    filename = sys.argv[1]
+    host = sys.argv[2]
+    limit = sys.argv[3]
+    get_ids(filename, host, limit)

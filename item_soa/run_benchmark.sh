@@ -26,7 +26,7 @@ if [ -d "env" ]; then
 
     case $1 in
         soft)
-            CYCLES="2:5:8:11:14" ;;
+            CYCLES="2:5:10:15:20:25" ;;
         medium)
             CYCLES="10:20:30:40:50" ;;
         hard)
