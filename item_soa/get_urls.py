@@ -3,7 +3,9 @@ import requests
 import ids
 
 
-URL_BASE = 'http://dev-models.olx.com.ar:8000/quijote'
+#URL_BASE = 'http://dev-models.olx.com.ar:8000/quijote'
+#URL_BASE = 'http://models-quijote-qa1.olx.com.ar'
+URL_BASE = 'http://models-quijote-qa2.olx.com.ar'
 
 class Counter:
     total_requests = 0
@@ -44,7 +46,7 @@ def fetch_subresource(name, url):
                     fetch(url_seo)
 
 if __name__ == '__main__':
-    logfile = open('urls.txt', 'w')
+    logfile = open('urls_qa2.txt', 'w')
 
     for i, id in enumerate(ids.ids[:500]):
         Counter.total_itempages += 1
