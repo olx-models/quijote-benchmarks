@@ -45,8 +45,8 @@ ENVS = {
 
 class Counter(object):
 
-    def __init__(self, name):
-        self.workers = 1
+    def __init__(self, name, workers=1):
+        self.workers = workers
         self.name = name
         self.total_items = 0
         self.total_time = 0
@@ -181,10 +181,8 @@ def bench(workers, env, items, verbose=False):
 
 
 def print_stats(counters, workers):
-    final_item_counter = Counter('Item Pages')
-    final_item_counter.workers = workers
-    final_reqs_counter = Counter('Total Requests')
-    final_reqs_counter.workers = workers
+    final_item_counter = Counter('Item Pages', workers)
+    final_reqs_counter = Counter('Total Requests', workers)
 
     for c in counters:
         final_item_counter.count_counter(c[0])
@@ -227,5 +225,3 @@ if __name__ == '__main__':
         bench(workers, args.env, args.items, args.verbose)
         if workers != args.workers[-1]:
             time.sleep(args.sleep)
-
-
