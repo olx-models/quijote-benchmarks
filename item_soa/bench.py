@@ -1,6 +1,10 @@
+#!/usr/bin/env python
+
 import sys
+import argparse
 import random
 import time
+import itertools
 import requests
 import threading
 from Queue import Queue, Empty
@@ -9,28 +13,32 @@ from Queue import Queue, Empty
 ENVS = {
     'dev': {
         'ids_module': 'ids_dev',
-        'log_file': 'result_dev.txt',
-        'url_base': 'http://dev-models.olx.com.ar:8000/quijote',
+        'log_file': 'result_dev.log',
+        'urls_base': ['http://dev-models.olx.com.ar:8000/quijote'],
     },
     'dev-cluster': {
         'ids_module': 'ids_dev',
-        'log_file': 'result_dev_cluster_%s.txt',
-        'url_base': 'http://dev-models.olx.com.ar:%s/quijote-cluster',
+        'log_file': 'result_dev_cluster.log',
+        'urls_base': ['http://dev-models.olx.com.ar:5001/quijote-cluster',
+                      'http://dev-models.olx.com.ar:5002/quijote-cluster',
+                      'http://dev-models.olx.com.ar:5003/quijote-cluster',
+                      'http://dev-models.olx.com.ar:5004/quijote-cluster',
+                      ],
     },
     'qa1': {
         'ids_module': 'ids_qa1',
-        'log_file': 'result_qa1.txt',
-        'url_base': 'http://models-quijote-qa1.olx.com.ar',
+        'log_file': 'result_qa1.log',
+        'urls_base': ['http://models-quijote-qa1.olx.com.ar'],
     },
     'qa2': {
         'ids_module': 'ids_qa2',
-        'log_file': 'result_qa2.txt',
-        'url_base': 'http://models-quijote-qa2.olx.com.ar',
+        'log_file': 'result_qa2.log',
+        'urls_base': ['http://models-quijote-qa2.olx.com.ar'],
     },
     'live': {
         'ids_module': 'ids_live',
-        'log_file': 'result_live.txt',
-        'url_base': 'http://204.232.252.178',
+        'log_file': 'result_live.log',
+        'urls_base': ['http://204.232.252.178'],
     },
 }
 
@@ -94,9 +102,10 @@ class Counter(object):
         return '\n'.join(fmt[k] % stats[k] for k in keys)
 
 
-def fetch(url, counter):
-    sys.stdout.write('.')
-    sys.stdout.flush()
+def fetch(url, counter, verbose=False):
+    if verbose:
+        sys.stdout.write('.')
+        sys.stdout.flush()
     begin_time = time.time()
     response = requests.get(url)
     delta = (time.time() - begin_time) * 1000  # ms
@@ -104,44 +113,71 @@ def fetch(url, counter):
     return response
 
 
-def fetch_subresource(name, url, counter):
-    response = fetch(url, counter)
+def fetch_subresource(name, url, counter, verbose=False):
+    response = fetch(url, counter, verbose)
     if response.status_code == 200 and name in ('category', 'location', 'seo'):
         data = response.json()
         if name in ('category', 'location'):
             url_parent = data['response']['resources']['parent']
             if url_parent:
-                fetch_subresource(name, url_parent, counter)
+                fetch_subresource(name, url_parent, counter, verbose)
         if name == 'seo':
             for direction in ('next', 'prev'):
                 url_seo = data['response']['resources'][direction]
                 if url_seo:
-                    fetch(url_seo, counter)
+                    fetch(url_seo, counter, verbose)
 
 
-def worker(i, queue, counters):
+def worker(id, queue, counters, verbose=False):
     item_counter, reqs_counter = counters
-    url_base = ENVS[env]['url_base'] + '/v1/site/1/item/%s'
-
-    sys.stdout.write("Worker %s started\n" % i)
-    sys.stdout.flush()
+    if verbose:
+        sys.stdout.write("Worker %s started\n" % id)
+        sys.stdout.flush()
     time.sleep(2)
 
     while True:
         try:
-            id = queue.get_nowait()
+            url = queue.get_nowait()
         except Empty:
             break
-        url = url_base % id
         item_reqs_counter = Counter('Item Request')
         response = fetch(url, item_reqs_counter)
         if response.status_code == 200:
             data = response.json()
             for name, url in data['response']['resources'].items():
                 if url:
-                    fetch_subresource(name, url, item_reqs_counter)
+                    fetch_subresource(name, url, item_reqs_counter, verbose)
         reqs_counter.count_counter(item_reqs_counter)
         item_counter.count_item(item_reqs_counter.total_time)
+
+
+def bench(workers, env, items, verbose=False):
+    # Randomize IDs and construct the urls
+    random.shuffle(ids.ids)
+    urls_base = itertools.cycle(ENVS[env]['urls_base'])
+    queue = Queue()
+    for id in ids.ids[:items]:
+        url = '%s/v1/site/1/item/%s' % (urls_base.next(), id)
+        queue.put(url)
+
+    # Start threads
+    jobs = []
+    counters = []
+    for id in range(workers):
+        c = ([Counter('Item Pages'), Counter('Total Requests')])
+        t = threading.Thread(target=worker, args=(id, queue, c, verbose))
+        jobs.append(t)
+        counters.append(c)
+        t.start()
+
+    # End threads
+    for t in jobs:
+        t.join()
+
+    # Show result
+    if verbose:
+        print
+    print_stats(counters, workers)
 
 
 def print_stats(counters, workers):
@@ -154,40 +190,42 @@ def print_stats(counters, workers):
         final_item_counter.count_counter(c[0])
         final_reqs_counter.count_counter(c[1])
 
-    print
+    print "-" * 40
+    print workers, "Workers"
+    print "-" * 40
     print final_item_counter
     print final_reqs_counter
 
 
 if __name__ == '__main__':
+    # Parse arguments
+    parser = argparse.ArgumentParser(description='Quijote benchmarks.')
+    parser.add_argument('--env', type=str, required=True,
+                        help='Environment: dev, qa1, qa2, live.')
+    parser.add_argument('--items', type=int, required=True,
+                        help='Amount of items.')
+    parser.add_argument('--workers', type=int, required=True, action='append',
+                        help='Threads. Can be used multiple times.')
+    parser.add_argument('--sleep', type=int, default=10,
+                        help='Sleep time in seconds between benchmarks.')
+    parser.add_argument('--verbose', action='store_true')
+    args = parser.parse_args()
+
+    # Load module with IDs
     try:
-        env = sys.argv[1]
-        workers = int(sys.argv[2])
-        limit = int(sys.argv[3])
-    except:
-        print "Usage %s ENV WORKERS ITEM_PAGES" % sys.argv[0]
+        module = ENVS[args.env]['ids_module']
+        ids = __import__(module)
+    except KeyError:
+        sys.stdout.write('Env %s does not exist\n' % args.env)
+        sys.exit(1)
+    except ImportError:
+        sys.stdout.write('Module %s does not exist\n' % module)
         sys.exit(1)
 
-    ids = __import__(ENVS[env]['ids_module'])
-    random.shuffle(ids.ids)
+    # Run benchmarks
+    for workers in args.workers:
+        bench(workers, args.env, args.items, args.verbose)
+        if workers != args.workers[-1]:
+            time.sleep(args.sleep)
 
-    queue = Queue()
-    for id in ids.ids[:limit]:
-        queue.put(id)
-
-    # Start threads
-    jobs = []
-    counters = []
-    for i in range(workers):
-        c = ([Counter('Item Pages'), Counter('Total Requests')])
-        t = threading.Thread(target=worker, args=(i, queue, c))
-        jobs.append(t)
-        counters.append(c)
-        t.start()
-
-    # End threads
-    for t in jobs:
-        t.join()
-
-    print_stats(counters, workers)
 
