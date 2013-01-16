@@ -13,12 +13,14 @@ from Queue import Queue, Empty
 ENVS = {
     'dev': {
         'ids_module': 'ids_dev',
-        'log_file': 'result_dev.log',
+        'log_file': 'bench_dev_%s.log',
+        'csv_file': 'bench_dev_%s.csv',
         'urls_base': ['http://dev-models.olx.com.ar:8000/quijote'],
     },
     'dev-cluster': {
         'ids_module': 'ids_dev',
-        'log_file': 'result_dev_cluster.log',
+        'log_file': 'bench_dev_cluster_%s.log',
+        'csv_file': 'bench_dev_cluster_%s.csv',
         'urls_base': ['http://dev-models.olx.com.ar:5001/quijote-cluster',
                       'http://dev-models.olx.com.ar:5002/quijote-cluster',
                       'http://dev-models.olx.com.ar:5003/quijote-cluster',
@@ -27,17 +29,20 @@ ENVS = {
     },
     'qa1': {
         'ids_module': 'ids_qa1',
-        'log_file': 'result_qa1.log',
+        'log_file': 'bench_qa1_%s.log',
+        'csv_file': 'bench_qa1_%s.csv',
         'urls_base': ['http://models-quijote-qa1.olx.com.ar'],
     },
     'qa2': {
         'ids_module': 'ids_qa2',
-        'log_file': 'result_qa2.log',
+        'log_file': 'bench_qa2_%s.log',
+        'csv_file': 'bench_qa2_%s.csv',
         'urls_base': ['http://models-quijote-qa2.olx.com.ar'],
     },
     'live': {
         'ids_module': 'ids_live',
-        'log_file': 'result_live.log',
+        'log_file': 'bench_live_%s.log',
+        'csv_file': 'bench_live_%s.csv',
         'urls_base': ['http://204.232.252.178'],
     },
 }
@@ -146,7 +151,6 @@ def bench(workers, env, items):
         jobs.append(t)
         counters.append(c)
 
-    # Start timer
     begin_time = time.time()
 
     # Start threads
@@ -157,14 +161,11 @@ def bench(workers, env, items):
     for t in jobs:
         t.join()
 
-    # Stop timer
     bench_time = (time.time() - begin_time) * 1000  # ms
-
-    # Show result
-    print_stats(bench_time, counters, workers)
+    return get_result(bench_time, counters, workers)
 
 
-def print_stats(bench_time, counters, workers):
+def get_result(bench_time, counters, workers):
     items_counter = Counter('Items')
     reqs_counter = Counter('Requests')
 
@@ -172,23 +173,73 @@ def print_stats(bench_time, counters, workers):
         items_counter.count_counter(c[0])
         reqs_counter.count_counter(c[1])
 
-    print "=" * 40
-    print workers, "Threads"
-    print "\tTime: %0.2fs" % (bench_time / 1000.0)
-    print "\tTotal Items:", items_counter.items
-    item_avg = float(items_counter.items) / (bench_time / 1000.0)
-    print "\tItems per second: %0.2f/s" % item_avg
-    print "\tTotal requests:", reqs_counter.items
-    req_avg = float(reqs_counter.items) / (bench_time / 1000.0)
-    print "\tRequests per second: %0.2f/s" % req_avg
+    bench_time_sec = bench_time / 1000.0
+    item_avg = float(items_counter.items) / bench_time_sec
+    req_avg = float(reqs_counter.items) / bench_time_sec
     reqs_per_item = (float(reqs_counter.items) / float(items_counter.items))
-    print "\tRequests per item: %0.2f" % reqs_per_item
-    print "\tMax item time: %0.2fms" % items_counter.max
-    print "\tMin item time: %0.2fms" % items_counter.min
-    print "\tAvg item time: %0.2fms" % items_counter.avg()
-    print "\tMax request time: %0.2fms" % reqs_counter.max
-    print "\tMin request time: %0.2fms" % reqs_counter.min
-    print "\tAvg request time: %0.2fms" % reqs_counter.avg()
+
+    return {'workers': workers,
+            'time': round(bench_time_sec, 2),
+            'items': items_counter.items,
+            'items_per_second': round(item_avg, 2),
+            'requests': reqs_counter.items,
+            'requests_per_second': round(req_avg, 2),
+            'requests_per_item': round(reqs_per_item, 2),
+            'max_item_time': round(items_counter.max, 2),
+            'min_item_time': round(items_counter.min, 2),
+            'avg_item_time': round(items_counter.avg(), 2),
+            'max_request_time': round(reqs_counter.max, 2),
+            'min_request_time': round(reqs_counter.min, 2),
+            'avg_request_time': round(reqs_counter.avg(), 2),
+            }
+
+
+def save_to_log_file(result, filename):
+    chunks = ("=" * 40,
+              "Threads %s" % result['workers'],
+              "\tTime: %ss" % result['time'],
+              "\tTotal items: %s" % result['items'],
+              "\tItems per second: %ss" % result['items_per_second'],
+              "\tTotal requests: %s" % result['requests'],
+              "\tRequests per second: %s/s" % result['requests_per_second'],
+              "\tRequests per item: %s" % result['requests_per_item'],
+              "\tMax item time: %sms" % result['max_item_time'],
+              "\tMin item time: %sms" % result['min_item_time'],
+              "\tAvg item time: %sms" % result['avg_item_time'],
+              "\tMax request time: %sms" % result['max_request_time'],
+              "\tMin request time: %sms" % result['min_request_time'],
+              "\tAvg request time: %sms" % result['avg_request_time'],
+             )
+    out = '\n'.join(chunks)
+    print out
+    with open(filename, 'a') as f:
+        f.write('%s\n' % out)
+
+
+def save_to_csv_file(results, filename):
+    rows = {}
+    for key in results[0]:
+        rows[key] = []
+    for result in results:
+        for key in results[0]:
+            rows[key].append(str(result[key]))
+
+    titles = [('workers', 'Threads'),
+              ('items', 'Items'), 
+              ('time', 'Time (s)'),
+              ('requests', 'Total requests'),
+              ('requests_per_second', 'Requests per second'),
+              ('requests_per_item', 'Requests per item'),
+              ('max_item_time', 'Max item time (ms)'),
+              ('min_item_time', 'Min item time (ms)'),
+              ('avg_item_time', 'Avg item time (ms)'),
+              ('max_request_time', 'Max request time (ms)'),
+              ('min_request_time', 'Min request time (ms)'),
+              ('avg_request_time', 'Avg request time (ms)'),
+             ]
+    with open(filename, 'w') as f:
+        for key, title in titles:
+            f.write("%s,%s\n" % (title, ','.join(rows[key])))
 
 
 if __name__ == '__main__':
@@ -215,8 +266,17 @@ if __name__ == '__main__':
         sys.stdout.write('Module %s does not exist\n' % module)
         sys.exit(1)
 
+    time_id = time.time()
+    log_file = ENVS[args.env]['log_file'] % time_id
+    csv_file = ENVS[args.env]['csv_file'] % time_id
+
     # Run benchmarks
+    results = []
     for workers in args.workers:
-        bench(workers, args.env, args.items)
+        result = bench(workers, args.env, args.items)
+        save_to_log_file(result, log_file)
+        results.append(result)
         if workers != args.workers[-1]:
             time.sleep(args.sleep)
+
+    save_to_csv_file(results, csv_file)
