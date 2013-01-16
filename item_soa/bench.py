@@ -68,7 +68,6 @@ class Counter(object):
         if counter.min < self.min:
             self.min = counter.min
 
-    @property
     def avg(self):
         if self.items > 0:
             return self.time / float(self.items)
@@ -78,10 +77,10 @@ class Counter(object):
     def __str__(self):
         chunks = (self.name,
                   'Items: %s' % self.items,
-                  'Time %0.2f ms' % self.time,
-                  'Avg: %0.2f ms' % self.avg,
-                  'Max: %0.2f ms' % self.max,
-                  'Min: %0.2f ms' % self.min,
+                  'Time %0.2fms' % self.time,
+                  'Avg: %0.2fms' % self.avg(),
+                  'Max: %0.2fms' % self.max,
+                  'Min: %0.2fms' % self.min,
                   )
         return ' - '.join(chunks)
 
@@ -175,7 +174,7 @@ def print_stats(bench_time, counters, workers):
 
     print "=" * 40
     print workers, "Threads"
-    print "\tTime: %0.2f s" % (bench_time / 1000.0)
+    print "\tTime: %0.2fs" % (bench_time / 1000.0)
     print "\tTotal Items:", items_counter.items
     item_avg = float(items_counter.items) / (bench_time / 1000.0)
     print "\tItems per second: %0.2f/s" % item_avg
@@ -184,12 +183,12 @@ def print_stats(bench_time, counters, workers):
     print "\tRequests per second: %0.2f/s" % req_avg
     reqs_per_item = (float(reqs_counter.items) / float(items_counter.items))
     print "\tRequests per item: %0.2f" % reqs_per_item
-    print "\tMax item time: %0.2f ms" % items_counter.max
-    print "\tMin item time: %0.2f ms" % items_counter.min
-    print "\tAvg item time: %0.2f ms" % items_counter.avg
-    print "\tMax request time: %0.2f ms" % reqs_counter.max
-    print "\tMin request time: %0.2f ms" % reqs_counter.min
-    print "\tAvg request time: %0.2f ms" % reqs_counter.avg
+    print "\tMax item time: %0.2fms" % items_counter.max
+    print "\tMin item time: %0.2fms" % items_counter.min
+    print "\tAvg item time: %0.2fms" % items_counter.avg()
+    print "\tMax request time: %0.2fms" % reqs_counter.max
+    print "\tMin request time: %0.2fms" % reqs_counter.min
+    print "\tAvg request time: %0.2fms" % reqs_counter.avg()
 
 
 if __name__ == '__main__':
