@@ -161,11 +161,11 @@ def bench(workers, env, items):
     for t in jobs:
         t.join()
 
-    bench_time = (time.time() - begin_time) * 1000  # ms
-    return get_result(bench_time, counters, workers)
+    bench_time_sec = time.time() - begin_time  # s
+    return get_result(bench_time_sec, counters, workers)
 
 
-def get_result(bench_time, counters, workers):
+def get_result(bench_time_sec, counters, workers):
     items_counter = Counter('Items')
     reqs_counter = Counter('Requests')
 
@@ -173,7 +173,6 @@ def get_result(bench_time, counters, workers):
         items_counter.count_counter(c[0])
         reqs_counter.count_counter(c[1])
 
-    bench_time_sec = bench_time / 1000.0
     item_avg = float(items_counter.items) / bench_time_sec
     req_avg = float(reqs_counter.items) / bench_time_sec
     reqs_per_item = (float(reqs_counter.items) / float(items_counter.items))
@@ -266,7 +265,7 @@ if __name__ == '__main__':
         sys.stdout.write('Module %s does not exist\n' % module)
         sys.exit(1)
 
-    time_id = time.time()
+    time_id = time.strftime('%Y%m%d-%H%M%S')
     log_file = ENVS[args.env]['log_file'] % time_id
     csv_file = ENVS[args.env]['csv_file'] % time_id
 
