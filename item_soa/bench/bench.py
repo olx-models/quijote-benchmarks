@@ -287,7 +287,7 @@ if __name__ == '__main__':
     if len(options.threads) == 0:
         options.threads = [1]
 
-    # URLs service
+    # URLs service and test connection
     if options.service:
         urls_service = []
         for url in options.service:
@@ -297,7 +297,9 @@ if __name__ == '__main__':
         options.service = urls_service
     else:
         options.service = ENVS[options.env]['urls_service']
+    test_connection(options.service)
 
+    # Files
     time_id = time.strftime('%Y%m%d-%H%M%S')
     log_file = ENVS[options.env]['log_file'] % time_id
     csv_file = ENVS[options.env]['csv_file'] % time_id
@@ -309,11 +311,10 @@ if __name__ == '__main__':
         lines.append(line)
     out = '\n'.join(lines)
     print out
-    with open(log_file, 'a') as f:
+    with open(log_file, 'w') as f:
         f.write('%s\n' % out)
 
     # Run benchmarks
-    test_connection(options.service)
     results = []
     for threads in options.threads:
         result = bench(threads, options)
