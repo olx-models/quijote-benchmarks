@@ -43,6 +43,10 @@ ENVS = {
                          'http://dev-models.olx.com.ar:5002/quijote-cluster',
                          'http://dev-models.olx.com.ar:5003/quijote-cluster',
                          'http://dev-models.olx.com.ar:5004/quijote-cluster',
+                         'http://dev-models.olx.com.ar:5005/quijote-cluster',
+                         'http://dev-models.olx.com.ar:5006/quijote-cluster',
+                         'http://dev-models.olx.com.ar:5007/quijote-cluster',
+                         'http://dev-models.olx.com.ar:5008/quijote-cluster',
                         ],
     },
     'qa1': {

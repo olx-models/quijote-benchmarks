@@ -1,5 +1,18 @@
 #!/usr/bin/env python
 
+"""
+Quijote Item-page benchmark
+
+Usage:
+
+    First get a lot of item ids. Then run the bench.
+
+    $ ./get_ids.py --env=qa2 --items=10000
+    $ ./bench.py --env=qa2 --items=500 --workers=10 --workers=20\
+                 --workers=50 --sleep=20
+
+"""
+
 import sys
 import argparse
 import random
@@ -124,9 +137,11 @@ def worker(id, queue, counters):
         response = fetch(url, reqs_counter)
         if response.status_code == 200:
             data = response.json()
-            for name, url in data['response']['resources'].items():
-                if url:
-                    fetch_subresource(name, url, reqs_counter)
+            for name, url_ in data['response']['resources'].items():
+                if url_:
+                    fetch_subresource(name, url_, reqs_counter)
+                elif name in ('location', 'category'):
+                    print name, url
         item_time = (time.time() - begin_time) * 1000  # ms
         items_counter.count_item(item_time)
 
@@ -208,7 +223,7 @@ def save_to_log_file(result, filename):
               "\tMax request time: %sms" % result['max_request_time'],
               "\tMin request time: %sms" % result['min_request_time'],
               "\tAvg request time: %sms" % result['avg_request_time'],
-             )
+              )
     out = '\n'.join(chunks)
     print out
     with open(filename, 'a') as f:
@@ -235,7 +250,7 @@ def save_to_csv_file(results, filename):
               ('max_request_time', 'Max request time (ms)'),
               ('min_request_time', 'Min request time (ms)'),
               ('avg_request_time', 'Avg request time (ms)'),
-             ]
+              ]
     with open(filename, 'w') as f:
         for key, title in titles:
             f.write("%s,%s\n" % (title, ','.join(rows[key])))
