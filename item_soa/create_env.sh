@@ -6,7 +6,7 @@ echo -e "\nActivating virtualenv"
 source env/bin/activate
 
 echo -e "\nInstalling modules"
-pip install requests
+pip install MySQL-python
 
 echo -e "\nDone"
 deactivate
