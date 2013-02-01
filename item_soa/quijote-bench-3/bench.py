@@ -21,6 +21,7 @@ import random
 import time
 import itertools
 import threading
+from threading import RLock
 import httplib
 
 from optparse import OptionParser
@@ -115,13 +116,14 @@ class KeepAliveClient(object):
 
 class Counter(object):
 
-    def __init__(self, name):
+    def __init__(self, name, glogger=None):
         self.name = name
         self.items = 0
         self.time = 0
         self.max = 0
         self.min = 99999999999999999
         self.errors = {}
+        self.glogger = glogger
 
     def count_item(self, t):
         self.items += 1
@@ -130,6 +132,9 @@ class Counter(object):
             self.max = t
         if t < self.min:
             self.min = t
+
+        if self.glogger is not None:
+            self.glogger.add(int(t))
 
     def count_counter(self, counter):
         self.items += counter.items
@@ -165,6 +170,31 @@ class Counter(object):
                   'Min: %0.2fms' % self.min,
                   )
         return ' - '.join(chunks)
+
+
+class GaussLogger(object):
+    def __init__(self):
+        self._data = {}
+        self._raw_data = []
+        self._lock = RLock()
+
+    def add(self, val):
+        with self._lock:
+            self._raw_data.append(val)
+
+    def sumarize(self):
+        for val in self._raw_data:
+            if val not in self._data:
+                self._data[val] = 0
+            self._data[val] += 1
+
+    def get_data(self):
+        self.sumarize()
+        max_key = max(self._data.keys())
+        data = []
+        for i in xrange(max_key + 1):
+            data.append('%d;%d' % (i, self._data.get(i, 0)))
+        return data
 
 
 def fetch_subresource(name, url, http, reqs_counter, url_referer=None):
@@ -219,14 +249,14 @@ def bench(threads, options):
     # Create threads, https and counters
     jobs = []
     counters = []
+    glogger = GaussLogger()
     for id in range(threads):
         items_counter = Counter('Items')
-        reqs_counter = Counter('Requests')
+        reqs_counter = Counter('Requests', glogger)
         c = (items_counter, reqs_counter)
         t = threading.Thread(target=worker, args=(id, queue, c))
         jobs.append(t)
         counters.append(c)
-
     begin_time = time.time()
 
     # Start threads
@@ -236,6 +266,10 @@ def bench(threads, options):
     # Wait for end all threads
     for t in jobs:
         t.join()
+
+    with open('gauss.csv', 'w') as gfile:
+        for l in glogger.get_data():
+            gfile.write(l + '\n')
 
     bench_time_sec = time.time() - begin_time  # s
     return get_result(bench_time_sec, counters, threads)
