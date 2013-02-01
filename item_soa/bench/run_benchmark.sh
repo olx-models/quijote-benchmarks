@@ -4,7 +4,7 @@ show_help ()
 {
     echo "Usage: ./run_benchmark {dev,qa1,qa2,live} {dummy,soft,medium,hard} service"
     echo
-    echo "Example: ./run_benchmark dev dummy http://dev-models.olx.com.ar/quijote"
+    echo "Example: ./run_benchmark.sh dev dummy http://dev-models.olx.com.ar/quijote"
     echo
     echo "Benchmarks"
     echo "    dummy:   100 items - 5,10 threads (util for testing)"
@@ -14,7 +14,7 @@ show_help ()
     exit 1
 }
 
-if [ $# -ne 3 ]
+if [ $# -lt 3 ]
 then
     show_help
 else
@@ -27,6 +27,7 @@ else
         *) show_help ;;
     esac
     SERVICE=$3
+    FILENAME=${4:=$2}
 fi
 
 
@@ -57,7 +58,8 @@ esac
 if [ $? -eq 0 ]
 then
     echo "Collecting data.."
-    TGZ_FILE="results_$BENCH.`date +%s`.tar.gz"
+    DATETIME=`date +%y%m%d_%H%M%S`
+    TGZ_FILE="${FILENAME}.${DATETIME}.tar.gz"
     tar czvf $TGZ_FILE *.log *.csv
     echo "Done!"
     echo "Please send $TGZ_FILE to Models Team"

@@ -35,7 +35,7 @@ if [ -d "env" ]; then
 
     mkdir tmp 2>/dev/null
 
-    fl-run-bench --cycles=$CYCLES --url=$2 test_item_soa.py ItemSoa.test_get
+    fl-run-bench --cycles=$CYCLES --url=$2 test_item_soa_round_robin.py ItemSoa.test_get
     fl-build-report --html tmp/bench-item-soa.xml
     deactivate
 fi

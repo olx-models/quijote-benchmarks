@@ -17,7 +17,7 @@ DBS = {'dev':    {'host':   'db-dev.olx.com.ar',
                   'user':   'dev',
                   'passwd': '*********',
                   'db':     'DBOLX_QA'},
-       'prod':   {'host':   'replica-olx-main.olx.com.ar',
+       'live':   {'host':   'replica-olx-main.olx.com.ar',
                   'user':   'dev',
                   'passwd': '*********',
                   'db':     'DBOLX_1'}
