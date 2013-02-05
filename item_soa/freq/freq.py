@@ -2,15 +2,15 @@
 # -*- coding: utf-8 -*-
 
 """
-Quijote Item-page benchmark
+Quijote Item-page freq benchmark
 
 Usage:
 
     First get a lot of item ids. Then run the bench.
 
     $ ./get_ids.py --env=qa2 --items=10000
-    $ ./bench.py --env=qa2 --items=500 \
-                 --threads=10 --threads=20 --threads=50 --sleep=20 \
+    $ ./bench.py --env=qa2 --time=60 \
+                 --freq=100 --freq=200 --freq=250 --sleep=20 \
                  --service=http://dev-models.olx.com.ar/quijote
 
 """
