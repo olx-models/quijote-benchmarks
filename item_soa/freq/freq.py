@@ -245,18 +245,65 @@ class Counter2:
         return min(self.items, key=lambda x: x[0])[0]
 
     def get_avg_time(self):
-        in_time = self.get_in_time()
-        sum = reduce(lambda x, y: x + y, [t[0] for t in in_time])
-        return sum / float(len(in_time))
+        sum = reduce(lambda x, y: x + y, [t[0] for t in self.items])
+        return sum / float(len(self.items))
+
+    #def get_avg_time(self):
+    #    in_time = self.get_in_time()
+    #    sum = reduce(lambda x, y: x + y, [t[0] for t in in_time])
+    #    return sum / float(len(in_time))
 
 
-def requester(url, time_limit, counter):
-    http = KeepAliveClient()
+CACHE = {}
+def cached(fn):
+    global CACHE
+    def inner(*args, **kwargs):
+        url = args[0]
+        data = CACHE.get(url, None)
+        if data is None:
+            data = fn(*args, **kwargs)
+            if data.status_code == 200:
+                CACHE[url] = data
+        return data
+    return inner
+
+
+@cached
+def requester(url, time_limit, counter, http=None):
+    if http is None:
+        http = KeepAliveClient()
     time_begin = time.time()
     response = http.get(url)
     end_time = time.time()
     delta = (end_time - time_begin) * 1000 #ms
     counter.count(delta, end_time)
+    return response
+
+
+def item_page_requester(url, time_limit, counter):
+    http = KeepAliveClient()
+    item = requester(url, time_limit, counter, http)
+    if item.status_code != 200:
+        return
+    itemdoc = item.json()
+
+    for subres in ('category', 'location', 'seo', 'dynamic_data', 'currency', 'images', 'user'):
+        subresurl = itemdoc['response']['resources'][subres]
+        if subresurl:
+            subdoc = requester(subresurl, time_limit, counter, http)
+            if subdoc.status_code == 200:
+                subdoc = subdoc.json()
+                if subres in ('category', 'location'):
+                    parenturl = subdoc['response']['resources']['parent']
+                    if parenturl:
+                        parentdoc = requester(parenturl, time_limit, counter, http)
+                if subres == 'seo':
+                    for np in ('next', 'prev'):
+                        npurl = subdoc['response']['resources'][np]
+                        if npurl:
+                            npdoc = requester(npurl, time_limit, counter, http)
+    http.close_all_connections()
+    return item
 
 
 def bench(freq, options):
@@ -280,7 +327,7 @@ def bench(freq, options):
         url = queue.get_nowait()
         sys.stdout.write('.')
         sys.stdout.flush()
-        t = threading.Thread(target=requester, args=(url, time_limit, counter))
+        t = threading.Thread(target=item_page_requester, args=(url, time_limit, counter))
         t.start()
         threads.append(t)
         time.sleep(time_between_threads)
@@ -297,7 +344,7 @@ def get_result(freq, time_begin, time_limit, counter):
     time_begin_str = datetime.fromtimestamp(time_begin).strftime(time_fmt)
     time_limit_str = datetime.fromtimestamp(time_limit).strftime(time_fmt)
     time_elapsed = counter.last_time - time_begin
-    real_freq = round(len(counter.get_in_time()) / time_elapsed, 2)
+    real_freq = round(len(counter.items) / time_elapsed, 2)
 
     return {'freq': freq,
             'time_between_threads': time_between_threads, 
@@ -305,8 +352,8 @@ def get_result(freq, time_begin, time_limit, counter):
             'time_begin': time_begin_str,
             'time_limit': time_limit_str,
             'time_elapsed': round(time_elapsed, 2),
-            'threads_launched': len(counter.items),
-            'threads_finished_in_time': len(counter.get_in_time()),
+            'requests_total': len(counter.items),
+            'requests_finished_in_time': len(counter.get_in_time()),
             'max_request_time': round(counter.get_max_time(), 2),
             'min_request_time': round(counter.get_min_time(), 2),
             'avg_request_time': round(counter.get_avg_time(), 2),
@@ -314,14 +361,17 @@ def get_result(freq, time_begin, time_limit, counter):
 
 
 def save_to_log_file(result, filename):
+    reqs = result['requests_total']
+    reqs_in_time = result['requests_finished_in_time']
+    rit_perc = reqs_in_time * 100.0 / reqs
     chunks = ("=" * 40,
               "Freq %s/s" % result['freq'],
-              "\tReal freq: %s/s" % result['real_freq'],
+              "\tResponse freq: %s/s" % result['real_freq'],
               "\tTime begin: %s" % result['time_begin'],
               "\tTime limit: %s" % result['time_limit'],
               "\tTime elapsed: %ss" % result['time_elapsed'],
-              "\tThreads launched: %s" % result['threads_launched'],
-              "\tThreads finished in time: %s" % result['threads_finished_in_time'],
+              "\tRequests launched: %s" % reqs,
+              "\tRequests finished in time: %s (%.2f%%)" % (reqs_in_time, rit_perc),
               "\tMax request time: %sms" % result['max_request_time'],
               "\tMin request time: %sms" % result['min_request_time'],
               "\tAvg request time: %sms" % result['avg_request_time'],
@@ -398,10 +448,9 @@ if __name__ == '__main__':
     # Run benchmarks
     results = []
     for freq in options.freq:
+        CACHE = {}
         result = bench(freq, options)
         save_to_log_file(result, log_file)
-        #results.append(result)
         if f != options.freq[-1]:
             time.sleep(options.sleep)
-
     #save_to_csv_file(results, csv_file)
