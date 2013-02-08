@@ -2,9 +2,9 @@
 
 show_help ()
 {
-    echo "Usage: ./run_benchmark {dev,qa1,qa2,live} {dummy,soft,medium,hard} service"
+    echo "Usage: $0 <dev|qa1|qa2|live> <dummy|soft|medium|hard> <quijote-url> [output-filename]"
     echo
-    echo "Example: ./run_benchmark.sh dev dummy http://dev-models.olx.com.ar/quijote"
+    echo "Example: $0 dev dummy http://dev-models.olx.com.ar/quijote"
     echo
     echo "Benchmarks"
     echo "    dummy:   100 items - 5,10 threads (util for testing)"
@@ -23,17 +23,17 @@ else
         *) show_help ;;
     esac
     case $2 in
-        dummy|soft|medium|hard) BENCH=$2 ;;
+        dummy|soft|medium|hard) LEVEL=$2 ;;
         *) show_help ;;
     esac
     SERVICE=$3
-    FILENAME=${4:=$2}
+    FILENAME=${4:-bench_$2}
 fi
 
 
 
-echo "Running bench $BENCH against $SERVICE.."
-case $BENCH in
+echo "Running bench $LEVEL against $SERVICE.."
+case $LEVEL in
     dummy)
         python bench.py --env=$ENVIRONMENT --items=20 \
                         --threads=5 --threads=10 \
@@ -58,8 +58,8 @@ esac
 if [ $? -eq 0 ]
 then
     echo "Collecting data.."
-    DATETIME=`date +%y%m%d_%H%M%S`
-    TGZ_FILE="${FILENAME}.${DATETIME}.tar.gz"
+    DATETIME=`date +%Y%m%dT%H%M%S`
+    TGZ_FILE="${FILENAME}_${DATETIME}.tar.gz"
     tar czvf $TGZ_FILE *.log *.csv
     echo "Done!"
     echo "Please send $TGZ_FILE to Models Team"
