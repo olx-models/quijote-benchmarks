@@ -227,6 +227,7 @@ class Counter2:
         self._lock = RLock()
         self.items = []
         self.last_time = 0
+        self.fails = 0
 
     def count(self, delta, end_time):
         with self._lock:
@@ -234,6 +235,9 @@ class Counter2:
             self.items.append((delta, end_time, in_time))
             if end_time > self.last_time:
                 self.last_time = end_time
+
+    def count_failed(self):
+        self.fails += 1
 
     def get_in_time(self):
         return [item for item in self.items if item[2]]
@@ -273,10 +277,14 @@ def requester(url, time_limit, counter, http=None):
     if http is None:
         http = KeepAliveClient()
     time_begin = time.time()
-    response = http.get(url)
-    end_time = time.time()
-    delta = (end_time - time_begin) * 1000 #ms
-    counter.count(delta, end_time)
+    try:
+        response = http.get(url)
+        end_time = time.time()
+        delta = (end_time - time_begin) * 1000 #ms
+        counter.count(delta, end_time)
+    except Exception:
+        counter.count_failed()
+        response = None
     return response
 
 
@@ -357,6 +365,7 @@ def get_result(freq, time_begin, time_limit, counter):
             'max_request_time': round(counter.get_max_time(), 2),
             'min_request_time': round(counter.get_min_time(), 2),
             'avg_request_time': round(counter.get_avg_time(), 2),
+            'fails': counter.fails,
             }
 
 
@@ -364,6 +373,11 @@ def save_to_log_file(result, filename):
     reqs = result['requests_total']
     reqs_in_time = result['requests_finished_in_time']
     rit_perc = reqs_in_time * 100.0 / reqs
+    reqs_failed = result['fails']
+    if reqs_failed:
+        failed_ratio = '1:%d' % (reqs / reqs_failed)
+    else:
+        failed_ratio = 'n/a'
     chunks = ("=" * 40,
               "Freq %s/s" % result['freq'],
               "\tResponse freq: %s/s" % result['real_freq'],
@@ -372,6 +386,7 @@ def save_to_log_file(result, filename):
               "\tTime elapsed: %ss" % result['time_elapsed'],
               "\tRequests launched: %s" % reqs,
               "\tRequests finished in time: %s (%.2f%%)" % (reqs_in_time, rit_perc),
+              "\tRequests failed: %s (%s)" % (reqs_failed, failed_ratio),
               "\tMax request time: %sms" % result['max_request_time'],
               "\tMin request time: %sms" % result['min_request_time'],
               "\tAvg request time: %sms" % result['avg_request_time'],

@@ -7,7 +7,7 @@ import random
 
 DBS = {'dev':    {'host':   'db-dev.olx.com.ar',
                   'user':   'dev_core',
-                  'passwd': '*********',
+                  'passwd': '+qyvpis6l#',
                   'db':     'DBOLX_DEV'},
        'qa1':    {'host':   'db1-qa1.olx.com.ar',
                   'user':   'dev',
