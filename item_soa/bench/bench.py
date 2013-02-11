@@ -21,7 +21,6 @@ import random
 import time
 import itertools
 import threading
-from threading import RLock
 import httplib
 
 from optparse import OptionParser
@@ -32,14 +31,16 @@ from Queue import Queue, Empty
 ENVS = {
     'dev': {
         'ids_module': 'ids_dev',
-        'log_file': 'bench_dev_%s.log',
-        'csv_file': 'bench_dev_%s.csv',
+        'log_file': '%s_bench_dev.log',
+        'csv_log_file': '%s_bench_dev_log.csv',
+        'csv_gauss_file': '%s_bench_dev_gauss.csv',
         'urls_service': ['http://dev-models.olx.com.ar:8000/quijote'],
     },
     'dev-cluster': {
         'ids_module': 'ids_dev',
-        'log_file': 'bench_dev_cluster_%s.log',
-        'csv_file': 'bench_dev_cluster_%s.csv',
+        'log_file': '%s_bench_dev_cluster.log',
+        'csv_log_file': '%s_bench_dev_cluster_log.csv',
+        'csv_gauss_file': '%s_bench_dev_cluster_gauss.csv',
         'urls_service': ['http://dev-models.olx.com.ar:5001/quijote-cluster',
                          'http://dev-models.olx.com.ar:5002/quijote-cluster',
                          'http://dev-models.olx.com.ar:5003/quijote-cluster',
@@ -52,20 +53,23 @@ ENVS = {
     },
     'qa1': {
         'ids_module': 'ids_qa1',
-        'log_file': 'bench_qa1_%s.log',
-        'csv_file': 'bench_qa1_%s.csv',
+        'log_file': '%s_bench_qa1.log',
+        'csv_log_file': '%s_bench_qa1_log.csv',
+        'csv_gauss_file': '%s_bench_qa1_gauss.csv',
         'urls_service': ['http://models-quijote-qa1.olx.com.ar'],
     },
     'qa2': {
         'ids_module': 'ids_qa2',
-        'log_file': 'bench_qa2_%s.log',
-        'csv_file': 'bench_qa2_%s.csv',
+        'log_file': '%s_bench_qa2.log',
+        'csv_log_file': '%s_bench_qa2_log.csv',
+        'csv_gauss_file': '%s_bench_qa2_gauss.csv',
         'urls_service': ['http://models-quijote-qa2.olx.com.ar'],
     },
     'live': {
         'ids_module': 'ids_live',
-        'log_file': 'bench_live_%s.log',
-        'csv_file': 'bench_live_%s.csv',
+        'log_file': '%s_bench_live.log',
+        'csv_log_file': '%s_bench_live_log.csv',
+        'csv_gauss_file': '%s_bench_live_gauss.csv',
         'urls_service': ['http://204.232.252.178'],
     },
 }
@@ -120,16 +124,17 @@ class KeepAliveClient(object):
 
 class Counter(object):
 
-    def __init__(self, name, glogger=None):
+    def __init__(self, name):
         self.name = name
+        self.int_values = []
         self.items = 0
         self.time = 0
         self.max = 0
         self.min = 99999999999999999
         self.errors = {}
-        self.glogger = glogger
 
     def count_item(self, t):
+        self.int_values.append(int(t))
         self.items += 1
         self.time += t
         if t > self.max:
@@ -137,10 +142,8 @@ class Counter(object):
         if t < self.min:
             self.min = t
 
-        if self.glogger is not None:
-            self.glogger.add(int(t))
-
     def count_counter(self, counter):
+        self.int_values += counter.int_values
         self.items += counter.items
         self.time += counter.time
         if counter.max > self.max:
@@ -165,6 +168,13 @@ class Counter(object):
         else:
             return 0
 
+    def gauss(self):
+        max_key = max(self.int_values)
+        data = [0] * (max_key + 1)
+        for v in self.int_values:
+            data[v] += 1
+        return data
+
     def __str__(self):
         chunks = (self.name,
                   'Items: %s' % self.items,
@@ -174,31 +184,6 @@ class Counter(object):
                   'Min: %0.2fms' % self.min,
                   )
         return ' - '.join(chunks)
-
-
-class GaussLogger(object):
-    def __init__(self):
-        self._data = {}
-        self._raw_data = []
-        self._lock = RLock()
-
-    def add(self, val):
-        with self._lock:
-            self._raw_data.append(val)
-
-    def sumarize(self):
-        for val in self._raw_data:
-            if val not in self._data:
-                self._data[val] = 0
-            self._data[val] += 1
-
-    def get_data(self):
-        self.sumarize()
-        max_key = max(self._data.keys())
-        data = []
-        for i in xrange(max_key + 1):
-            data.append('%d;%d' % (i, self._data.get(i, 0)))
-        return data
 
 
 def fetch_subresource(name, url, http, reqs_counter, url_referer=None):
@@ -253,10 +238,9 @@ def bench(threads, options):
     # Create threads, https and counters
     jobs = []
     counters = []
-    glogger = GaussLogger()
     for id in range(threads):
         items_counter = Counter('Items')
-        reqs_counter = Counter('Requests', glogger)
+        reqs_counter = Counter('Requests')
         c = (items_counter, reqs_counter)
         t = threading.Thread(target=worker, args=(id, queue, c))
         jobs.append(t)
@@ -270,10 +254,6 @@ def bench(threads, options):
     # Wait for end all threads
     for t in jobs:
         t.join()
-
-    with open('gauss.csv', 'w') as gfile:
-        for l in glogger.get_data():
-            gfile.write(l + '\n')
 
     bench_time_sec = time.time() - begin_time  # s
     return get_result(bench_time_sec, counters, threads)
@@ -291,6 +271,8 @@ def get_result(bench_time_sec, counters, threads):
     req_avg = float(reqs_counter.items) / bench_time_sec
     reqs_per_item = (float(reqs_counter.items) / float(items_counter.items))
 
+    gauss = reqs_counter.gauss()
+
     return {'threads': threads,
             'time': round(bench_time_sec, 2),
             'items': items_counter.items,
@@ -305,6 +287,8 @@ def get_result(bench_time_sec, counters, threads):
             'min_request_time': round(reqs_counter.min, 2),
             'avg_request_time': round(reqs_counter.avg(), 2),
             'errors': reqs_counter.errors,
+            'gauss': gauss,
+            'gauss_len': len(gauss),
             }
 
 
@@ -336,7 +320,7 @@ def save_to_log_file(result, filename):
         f.write('%s\n' % out)
 
 
-def save_to_csv_file(results, filename):
+def save_to_csv_log_file(results, filename):
     rows = {}
     for key in results[0]:
         rows[key] = []
@@ -360,6 +344,22 @@ def save_to_csv_file(results, filename):
     with open(filename, 'w') as f:
         for key, title in titles:
             f.write("%s,%s\n" % (title, ','.join(rows[key])))
+
+
+def save_to_csv_gauss_file(results, filename):
+    titles = ['ms'] + [str(result['threads']) for result in results]
+    max_len = max([result['gauss_len'] for result in results])
+    data = [[] for _ in xrange(max_len)]
+    for result in results:
+        for i, row in enumerate(data):
+            if i < result['gauss_len']:
+                row.append(str(result['gauss'][i]))
+            else:
+                row.append('0')
+    with open(filename, 'w') as f:
+        f.write("%s\n" % ','.join(titles))
+        for i, row in enumerate(data):
+            f.write("%s,%s\n" % (i, ','.join(row)))
 
 
 def test_connection(services):
@@ -413,7 +413,8 @@ if __name__ == '__main__':
     # Files
     time_id = time.strftime('%Y%m%d-%H%M%S')
     log_file = ENVS[options.env]['log_file'] % time_id
-    csv_file = ENVS[options.env]['csv_file'] % time_id
+    csv_log_file = ENVS[options.env]['csv_log_file'] % time_id
+    csv_gauss_file = ENVS[options.env]['csv_gauss_file'] % time_id
 
     # Show benchmark settings before run benchmarks
     lines = ['Benchmark settings']
@@ -434,4 +435,11 @@ if __name__ == '__main__':
         if threads != options.threads[-1]:
             time.sleep(options.sleep)
 
-    save_to_csv_file(results, csv_file)
+    save_to_csv_log_file(results, csv_log_file)
+    save_to_csv_gauss_file(results, csv_gauss_file)
+
+    print "Done!"
+    print "Generated files:"
+    print "\t", log_file
+    print "\t", csv_log_file
+    print "\t", csv_gauss_file

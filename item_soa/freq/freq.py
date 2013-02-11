@@ -8,10 +8,10 @@ Usage:
 
     First get a lot of item ids. Then run the bench.
 
-    $ ./get_ids.py --env=qa2 --items=10000
-    $ ./bench.py --env=qa2 --time=60 \
-                 --freq=100 --freq=200 --freq=250 --sleep=20 \
-                 --service=http://dev-models.olx.com.ar/quijote
+    $ ./get_ids.py --env=qa2 --items=100000
+    $ ./freq.py --env=qa2 --duration=60 \
+                --freq=30 --freq=40 --freq=50 --sleep=20 \
+                --service=http://dev-models.olx.com.ar/quijote
 
 """
 
@@ -27,20 +27,22 @@ import httplib
 from datetime import datetime
 from optparse import OptionParser
 from urlparse import urlparse
-from Queue import Queue, Empty
+from Queue import Queue
 
 
 ENVS = {
     'dev': {
         'ids_module': 'ids_dev',
-        'log_file': 'bench_dev_%s.log',
-        'csv_file': 'bench_dev_%s.csv',
+        'log_file': '%s_freq_dev.log',
+        'csv_log_file': '%s_freq_dev_log.csv',
+        'csv_gauss_file': '%s_freq_dev_gauss.csv',
         'urls_service': ['http://dev-models.olx.com.ar:8000/quijote'],
     },
     'dev-cluster': {
         'ids_module': 'ids_dev',
-        'log_file': 'bench_dev_cluster_%s.log',
-        'csv_file': 'bench_dev_cluster_%s.csv',
+        'log_file': '%s_freq_dev_cluster.log',
+        'csv_log_file': '%s_freq_dev_cluster_log.csv',
+        'csv_gauss_file': '%s_freq_dev_cluster_gauss.csv',
         'urls_service': ['http://dev-models.olx.com.ar:5001/quijote-cluster',
                          'http://dev-models.olx.com.ar:5002/quijote-cluster',
                          'http://dev-models.olx.com.ar:5003/quijote-cluster',
@@ -53,20 +55,23 @@ ENVS = {
     },
     'qa1': {
         'ids_module': 'ids_qa1',
-        'log_file': 'bench_qa1_%s.log',
-        'csv_file': 'bench_qa1_%s.csv',
+        'log_file': '%s_freq_qa1.log',
+        'csv_log_file': '%s_freq_qa1_log.csv',
+        'csv_gauss_file': '%s_freq_qa1_gauss.csv',
         'urls_service': ['http://models-quijote-qa1.olx.com.ar'],
     },
     'qa2': {
         'ids_module': 'ids_qa2',
-        'log_file': 'bench_qa2_%s.log',
-        'csv_file': 'bench_qa2_%s.csv',
+        'log_file': '%s_freq_qa2.log',
+        'csv_log_file': '%s_freq_qa2_log.csv',
+        'csv_gauss_file': '%s_freq_qa2_gauss.csv',
         'urls_service': ['http://models-quijote-qa2.olx.com.ar'],
     },
     'live': {
         'ids_module': 'ids_live',
-        'log_file': 'bench_live_%s.log',
-        'csv_file': 'bench_live_%s.csv',
+        'log_file': '%s_freq_live.log',
+        'csv_log_file': '%s_freq_live_log.csv',
+        'csv_gauss_file': '%s_freq_live_gauss.csv',
         'urls_service': ['http://204.232.252.178'],
     },
 }
@@ -119,120 +124,21 @@ class KeepAliveClient(object):
         self._connections = {}
 
 
-class Counter(object):
-
-    def __init__(self, name, glogger=None):
-        self.name = name
-        self.items = 0
-        self.time = 0
-        self.max = 0
-        self.min = 99999999999999999
-        self.errors = {}
-        self.glogger = glogger
-
-    def count_item(self, t):
-        self.items += 1
-        self.time += t
-        if t > self.max:
-            self.max = t
-        if t < self.min:
-            self.min = t
-
-        if self.glogger is not None:
-            self.glogger.add(int(t))
-
-    def count_counter(self, counter):
-        self.items += counter.items
-        self.time += counter.time
-        if counter.max > self.max:
-            self.max = counter.max
-        if counter.min < self.min:
-            self.min = counter.min
-        for code, urls in counter.errors.items():
-            for url in urls:
-                self.count_error(code, url)
-
-    def count_error(self, code, url, referer=None):
-        if code not in self.errors:
-            self.errors[code] = []
-        error = url
-        if referer:
-            error += ' - ' + referer
-        self.errors[code].append(error)
-
-    def avg(self):
-        if self.items > 0:
-            return self.time / float(self.items)
-        else:
-            return 0
-
-    def __str__(self):
-        chunks = (self.name,
-                  'Items: %s' % self.items,
-                  'Time %0.2fms' % self.time,
-                  'Avg: %0.2fms' % self.avg(),
-                  'Max: %0.2fms' % self.max,
-                  'Min: %0.2fms' % self.min,
-                  )
-        return ' - '.join(chunks)
-
-
-class GaussLogger(object):
-    def __init__(self):
-        self._data = {}
-        self._raw_data = []
-        self._lock = RLock()
-
-    def add(self, val):
-        with self._lock:
-            self._raw_data.append(val)
-
-    def sumarize(self):
-        for val in self._raw_data:
-            if val not in self._data:
-                self._data[val] = 0
-            self._data[val] += 1
-
-    def get_data(self):
-        self.sumarize()
-        max_key = max(self._data.keys())
-        data = []
-        for i in xrange(max_key + 1):
-            data.append('%d;%d' % (i, self._data.get(i, 0)))
-        return data
-
-
-def fetch_subresource(name, url, http, reqs_counter, url_referer=None):
-    response = http.get(url, reqs_counter)
-    if response.status_code == 200:
-        if name in ('category', 'location', 'seo'):
-            data = response.json()
-            if name in ('category', 'location'):
-                url_parent = data['response']['resources']['parent']
-                if url_parent:
-                    fetch_subresource(name, url_parent, http, reqs_counter, url)
-            if name == 'seo':
-                for direction in ('next', 'prev'):
-                    url_seo = data['response']['resources'][direction]
-                    if url_seo:
-                        fetch_subresource(direction, url_seo, http, reqs_counter, url)
-    else:
-        reqs_counter.count_error(response.status_code, url, url_referer)
-
-
-class Counter2:
+class Counter:
 
     def __init__(self, time_limit):
         self.time_limit = time_limit
         self._lock = RLock()
+        self.int_values = []
         self.items = []
         self.last_time = 0
         self.fails = 0
 
-    def count(self, delta, end_time):
+    def count(self, t, end_time):
         with self._lock:
+            self.int_values.append(int(t))
             in_time = end_time <= self.time_limit
-            self.items.append((delta, end_time, in_time))
+            self.items.append((t, end_time, in_time))
             if end_time > self.last_time:
                 self.last_time = end_time
 
@@ -252,10 +158,30 @@ class Counter2:
         sum = reduce(lambda x, y: x + y, [t[0] for t in self.items])
         return sum / float(len(self.items))
 
-    #def get_avg_time(self):
-    #    in_time = self.get_in_time()
-    #    sum = reduce(lambda x, y: x + y, [t[0] for t in in_time])
-    #    return sum / float(len(in_time))
+    def gauss(self):
+        max_key = max(self.int_values)
+        data = [0] * (max_key + 1)
+        for v in self.int_values:
+            data[v] += 1
+        return data
+
+
+def fetch_subresource(name, url, http, reqs_counter, url_referer=None):
+    response = http.get(url, reqs_counter)
+    if response.status_code == 200:
+        if name in ('category', 'location', 'seo'):
+            data = response.json()
+            if name in ('category', 'location'):
+                url_parent = data['response']['resources']['parent']
+                if url_parent:
+                    fetch_subresource(name, url_parent, http, reqs_counter, url)
+            if name == 'seo':
+                for direction in ('next', 'prev'):
+                    url_seo = data['response']['resources'][direction]
+                    if url_seo:
+                        fetch_subresource(direction, url_seo, http, reqs_counter, url)
+    else:
+        reqs_counter.count_error(response.status_code, url, url_referer)
 
 
 CACHE = {}
@@ -280,8 +206,8 @@ def requester(url, time_limit, counter, http=None):
     try:
         response = http.get(url)
         end_time = time.time()
-        delta = (end_time - time_begin) * 1000 #ms
-        counter.count(delta, end_time)
+        req_time = (end_time - time_begin) * 1000 #ms
+        counter.count(req_time, end_time)
     except Exception:
         counter.count_failed()
         response = None
@@ -324,8 +250,8 @@ def bench(freq, options):
         queue.put(url)
 
     time_begin = time.time()
-    time_limit = time_begin + options.time
-    counter = Counter2(time_limit)
+    time_limit = time_begin + options.duration
+    counter = Counter(time_limit)
 
     i = 0
     threads = []
@@ -354,28 +280,33 @@ def get_result(freq, time_begin, time_limit, counter):
     time_elapsed = counter.last_time - time_begin
     real_freq = round(len(counter.items) / time_elapsed, 2)
 
+    requests_total = len(counter.items)
+    requests_in_time = len(counter.get_in_time())
+    requests_in_time_perc = requests_in_time * 100.0 / requests_total
+
+    gauss = counter.gauss()
+
     return {'freq': freq,
             'time_between_threads': time_between_threads, 
             'real_freq': real_freq,
             'time_begin': time_begin_str,
             'time_limit': time_limit_str,
             'time_elapsed': round(time_elapsed, 2),
-            'requests_total': len(counter.items),
-            'requests_finished_in_time': len(counter.get_in_time()),
+            'requests_total': requests_total,
+            'requests_in_time': requests_in_time,
+            'requests_in_time_perc': requests_in_time_perc,
             'max_request_time': round(counter.get_max_time(), 2),
             'min_request_time': round(counter.get_min_time(), 2),
             'avg_request_time': round(counter.get_avg_time(), 2),
             'fails': counter.fails,
+            'gauss': gauss,
+            'gauss_len': len(gauss),
             }
 
 
 def save_to_log_file(result, filename):
-    reqs = result['requests_total']
-    reqs_in_time = result['requests_finished_in_time']
-    rit_perc = reqs_in_time * 100.0 / reqs
-    reqs_failed = result['fails']
-    if reqs_failed:
-        failed_ratio = '1:%d' % (reqs / reqs_failed)
+    if result['fails']:
+        failed_ratio = '1:%d' % (result['requests_total'] / result['fails'])
     else:
         failed_ratio = 'n/a'
     chunks = ("=" * 40,
@@ -384,9 +315,10 @@ def save_to_log_file(result, filename):
               "\tTime begin: %s" % result['time_begin'],
               "\tTime limit: %s" % result['time_limit'],
               "\tTime elapsed: %ss" % result['time_elapsed'],
-              "\tRequests launched: %s" % reqs,
-              "\tRequests finished in time: %s (%.2f%%)" % (reqs_in_time, rit_perc),
-              "\tRequests failed: %s (%s)" % (reqs_failed, failed_ratio),
+              "\tRequests: %s" % result['requests_total'],
+              "\tRequests in time: %s" % result['requests_in_time'],
+              "\tRequests in time perc: %.2f%%" % result['requests_in_time_perc'],
+              "\tRequests failed: %s (%s)" % (result['fails'], failed_ratio),
               "\tMax request time: %sms" % result['max_request_time'],
               "\tMin request time: %sms" % result['min_request_time'],
               "\tAvg request time: %sms" % result['avg_request_time'],
@@ -395,6 +327,47 @@ def save_to_log_file(result, filename):
     print '\n%s' % out
     with open(filename, 'a') as f:
         f.write('%s\n' % out)
+
+
+def save_to_csv_log_file(results, filename):
+    rows = {}
+    for key in results[0]:
+        rows[key] = []
+    for result in results:
+        for key in results[0]:
+            rows[key].append(str(result[key]))
+
+    titles = [('freq', 'Freq'),
+              ('real_freq', 'Response freq (reqs/s)'), 
+              ('time_begin', 'Time begin'),
+              ('time_limit', 'Time limit'),
+              ('time_elapsed', 'Time elapsed (s)'),
+              ('requests_total', 'Requests'),
+              ('requests_in_time', 'Requests in time'),
+              ('requests_in_time_perc', 'Requests in time perc (%)'),
+              ('max_request_time', 'Max request time (ms)'),
+              ('min_request_time', 'Min request time (ms)'),
+              ('avg_request_time', 'Avg request time (ms)'),
+              ]
+    with open(filename, 'w') as f:
+        for key, title in titles:
+            f.write("%s,%s\n" % (title, ','.join(rows[key])))
+
+
+def save_to_csv_gauss_file(results, filename):
+    titles = ['ms'] + [str(result['freq']) for result in results]
+    max_len = max([result['gauss_len'] for result in results])
+    data = [[] for _ in xrange(max_len)]
+    for result in results:
+        for i, row in enumerate(data):
+            if i < result['gauss_len']:
+                row.append(str(result['gauss'][i]))
+            else:
+                row.append('0')
+    with open(filename, 'w') as f:
+        f.write("%s\n" % ','.join(titles))
+        for i, row in enumerate(data):
+            f.write("%s,%s\n" % (i, ','.join(row)))
 
 
 def test_connection(services):
@@ -409,14 +382,14 @@ if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option('--env', type=str, default='dev',
                       help='Environment: dev, qa1, qa2, live.')
-    parser.add_option('--time', type=float, default=60,
+    parser.add_option('--duration', type=float, default=60,
                       help='Benchmark duration.')
     parser.add_option('--freq', type=int, action='append', default=[],
-                      help='Amount of request by second.')
+                      help='Amount of request by second. Can be used multiple times.')
     parser.add_option('--sleep', type=int, default=10,
                       help='Sleep time in seconds between benchmarks.')
     parser.add_option('--service', type=str, action='append', default=[],
-                      help='Can be used multiple times for round robin.')
+                      help='Quijote service. Can be used multiple times for round robin.')
     (options, args) = parser.parse_args()
 
     # Load module with IDs
@@ -448,11 +421,12 @@ if __name__ == '__main__':
     # Files
     time_id = time.strftime('%Y%m%d-%H%M%S')
     log_file = ENVS[options.env]['log_file'] % time_id
-    #csv_file = ENVS[options.env]['csv_file'] % time_id
+    csv_log_file = ENVS[options.env]['csv_log_file'] % time_id
+    csv_gauss_file = ENVS[options.env]['csv_gauss_file'] % time_id
 
     # Show benchmark settings before run benchmarks
     lines = ['Benchmark settings']
-    for k in ('env', 'time', 'service', 'freq', 'sleep'):
+    for k in ('env', 'duration', 'service', 'freq', 'sleep'):
         line = '\t%s: %s' % (k, getattr(options, k))
         lines.append(line)
     out = '\n'.join(lines)
@@ -466,6 +440,15 @@ if __name__ == '__main__':
         CACHE = {}
         result = bench(freq, options)
         save_to_log_file(result, log_file)
+        results.append(result)
         if f != options.freq[-1]:
             time.sleep(options.sleep)
-    #save_to_csv_file(results, csv_file)
+
+    save_to_csv_log_file(results, csv_log_file)
+    save_to_csv_gauss_file(results, csv_gauss_file)
+
+    print "Done!"
+    print "Generated files:"
+    print "\t", log_file
+    print "\t", csv_log_file
+    print "\t", csv_gauss_file
